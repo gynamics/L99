@@ -1111,23 +1111,23 @@ There is a more efficient algorithm, during each cycle we tested each number wit
 #+begin_src lisp
   (defun search-prime-2-aux (n)
     (if (< 2 n)
-        (let* ((m (isqrt n))
+        (let* ((m (max 2 (isqrt n)))
                (primes (search-prime-2-aux m)))
-          (append primes
-                  (loop for i from m to n
-                        when
-                        (loop for j in primes
-                              never (zerop (mod i j)))
-                        collect i)))
+          (nconc primes
+                 (loop for i from m to n
+                       when
+                       (loop for j in primes
+                             never (zerop (mod i j)))
+                       collect i)))
         '(2)))
 
   (defun search-prime-2 (start end)
-    (let* ((b (isqrt end))
+    (let* ((b (max 2 (isqrt end)))
            (primes (search-prime-2-aux b)))
-      (append
-       (when (< start b)
+      (nconc
+       (when (<= start b)
          (loop for i in primes
-               when (< start i) collect i))
+               when (<= start i) collect i))
        (loop for i from (max start b) to end
              when
              (loop for j in primes
