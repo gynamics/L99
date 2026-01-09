@@ -4441,17 +4441,16 @@ The explanation problem is not that clear, as fer me, I have these assumptions:
 - Assume a word can only be filled into a site in left-to-right or top-to-bottom direction. If reversed directions are allowed, we need to also test reversed words when do filtering.
 - Assume there may be redundant words that won't be filled in. That is to say, we don't do global removal when a word is fixed.
 - Assume one word may appear twice or more. If each of them can just appear once, then just remove it from ltb when selected.
-- Assume there is only one valid solution for each puzzle.
 
 To solve this problem we need to figure out a appropriate representation of the problem. First we may focus on find out all sites so that we can know where to fill words. We need a structure to find a site's information from its coordinates, information about one site should include its shape (vertical or horizontal) as well as its crossed sites. Here we use a 3D array to do the shape and coordinate transition. This is actually the hardest part of this problem, because the structure is relatively complexed here.
 
-Once the information about sites got organized, we will get a simple constraint satisfaction problem (CSP) to solve. The target is to assign proper values to the sites to satisfy all cross points have no conflicts. CSP with dependency cycles is NP-hard because it is hard to handle circular dependencies. For example, in p99a, there is no circular dependencies, so you can even solve it with a tree DFS on sites (but that won't work for p99b). Actually it is very hard to do pruning on sites in this problem, because assigned sites are not identical to tree nodes.
+Once the information about sites got organized, we will get a simple constraint satisfaction problem (CSP) to solve. The target is to assign proper values to the sites to satisfy all cross points have no conflicts. CSP with dependency cycles is NP-hard because it is hard to handle circular dependencies. For example, in p99a, there is no circular dependencies, so you can even solve it with a tree DFS without making records on sites (but that won't work for p99b). To solve general cases we need to make records on each site. If you really want to find a solution with a simple deterministic algorithm, you may need to enumerate all possible combinations of sites, then verify all local constraints one by one (I have found this brute-force method in many other people's solutions).
 
-Note that crossword is stronger than general CSP, because it is restricted to a planar grid embedding problem. Here we use a fixed-point propagation algorithm, starting from a point, recursively compute possible options for its constraint sites, finally decide its possible options from its constraints. I have an hypothesis that if there is only one unique solution, this algorithm should be able to converge in one pass. (not proven yet)
+Here we use a constraint propagation algorithm, starting from a point, recursively compute possible options of its constraint sites, finally compute its possible options from its constraints. This algorithm doesn't ensure convergency if there are no fixed points found in one pass. For example, consider there are two parallel solutions that have no conflicts to each other, both can be applied, but differs at cross points, then we won't be able to filter out a concrete solution after propagation. However, this algorithm already worked for all the 4 examples given.
 
-At least, we can say that this algorithm doesn't ensure convergency if there are no fixed points found in one pass. For example, consider there are two parallel solutions that have no conflicts to each other, both can be applied, but differs at cross points, then we won't be able to filter out a concrete solution after propagation. To find out a solution from non-convergent cases, we may do one more propagation with one more fixed point picked, and recurse until the whole graph converge to one single solution. I didn't implement this part, because one pass already worked for the 4 examples given, and I didn't find more examples to test.
+Suppose there is a cycle, we firstly enter that cycle from a point A, and detected the cycle when we are back to A, then A is pruned once. But, actually A will be pruned at least twice, because the way back to A in reversed direction, will also be searched sooner or later as a different propagation path. In both directions, A will preserve its initial status and won't propagate any of its known constraints on that cycle. So when A is finally computed, the constraints of A are not sufficiently pruned yet, because the pruning order matters here. Compared to AC-3 algorithm, AC-3 use a queue rather than a stack to determine the computing order, which also won't ensure global convergency.
 
-Also note that characters at non-cross points are free, words with the same characters at cross points are identical. If the dictionary is large, we may shrink each site's dictionary to the equivalent classes of constraints. This may help accelerate convergency of fixed-point propagation.
+Even if the constraint propagation didn't converge,  the result is usually with a much smaller size to compute. So I think this algorithm is still useful. That means, the remaining work can be done by brute-force searching in much less time.
 
 These small optimizations are applied: (not meaningful but I just did them)
 - We may only cache information about each site at the left-top end of it to avoid repeated travel. For other cells in the same site, we only cache the position of the left-top end. This allows us to do O(N) travel to build the sitemap (a trival travel with segment search takes O(N^2)).
@@ -4616,12 +4615,54 @@ These small optimizations are applied: (not meaningful but I just did them)
                                       sitemap dotmap 1 i j))))))))
       wordmap))
 
-  (defun crossword-dfs (wordmap sitemap path d x y)
-    (let* ((site (aref sitemap d x y)))
+  ;; check if a site is satisfied with current wordmap
+  (defun site-satisfied-p (wordmap sitemap site)
+    (let ((d (car site))
+          (x (cadr site))
+          (y (caddr site)))
+      (let ((w (car (aref wordmap d x y))))
+        (if (zerop d)
+            (loop for a in (cdr (aref sitemap d x y))
+                  for cw = (car (aref wordmap (- 1 d) (car a) (cdr a)))
+                  always (char= (aref w (- (car a) x))
+                                (aref cw (- y (cdr a)))))
+            (loop for a in (cdr (aref sitemap d x y))
+                  for cw = (car (aref wordmap (- 1 d) (car a) (cdr a)))
+                  always (char= (aref w (- (cdr a) y))
+                                (aref cw (- x (car a)))))))))
+
+  (defun wordmap-satisfied-p (wordmap sitemap sites)
+    (loop for site in sites
+          always (site-satisfied-p wordmap sitemap site)))
+
+  ;; enumerate-and-verify, very very slow
+  (defun crossword-brute (wordmap sitemap sites dep)
+    (if (null dep)
+        (when (wordmap-satisfied-p wordmap sitemap sites)
+          wordmap)
+        (let ((site (car dep)))
+          (let ((d (car site))
+                (x (cadr site))
+                (y (caddr site)))
+            (loop with len = (length (aref wordmap d x y))
+                  for _ from 0 below len
+                    thereis
+                    (crossword-brute wordmap sitemap sites (cdr dep))
+                  do (let ((ws (aref wordmap d x y)))
+                       ;; rotate wordlist
+                       (setf (aref wordmap d x y)
+                             (nconc (cdr ws) (cons (car ws) nil)))))))))
+
+  ;; constraint propagation
+  (defun crossword-cp (wordmap sitemap path)
+    (let* ((site (car path))
+           (d (car site))
+           (x (cadr site))
+           (y (caddr site)))
       (setf (aref wordmap d x y)
             (filter-words
              (aref wordmap d x y)
-             (loop for a in (cdr site)
+             (loop for a in (cdr (aref sitemap d x y))
                    for xsite = (list (- 1 d) (car a) (cdr a))
                    collect
                    (let* ((ow (aref wordmap (- 1 d) (car a) (cdr a)))
@@ -4630,9 +4671,8 @@ These small optimizations are applied: (not meaningful but I just did them)
                                   ;; prune fixed points and cycles
                                   ow
                                   ;; branch down recursively
-                                  (crossword-dfs
-                                   wordmap sitemap (cons xsite path)
-                                   (- 1 d) (car a) (cdr a)))))
+                                  (crossword-cp
+                                   wordmap sitemap (cons xsite path)))))
                      (if (zerop d)
                          (cons (avail-chars ws (- y (cdr a)))
                                (- (car a) x))
@@ -4648,9 +4688,8 @@ These small optimizations are applied: (not meaningful but I just did them)
           (let* ((ltb (build-length-table dict))
                  (wordmap (build-wordmap ltb sitemap dotmap)))
             (let ((site (car sites)))
-              (when (crossword-dfs wordmap sitemap nil
-                                      (car site) (cadr site) (caddr site))
-                wordmap)))))))
+              (when (crossword-cp wordmap sitemap (list site))
+                (crossword-brute wordmap sitemap sites sites))))))))
 
   (defun print-wordmap (wordmap)
     (if (null wordmap)
