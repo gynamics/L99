@@ -71,11 +71,8 @@ In Common Lisp, there is a built-in function ~last~, but it dosn't return a list
 
 For a tail-recursive function, it is more natural to consider ~reduce~. Most problems in this section can be rewritten in this style, it may bring you a more functional programming style. Here is one example:
 #+begin_src lisp
-  (defun last-1 (l)
-    (reduce (lambda (_ x) x) (cons nil l)))
-
   (defun my-last-1 (l)
-    (and l (list (last-1 l))))
+    (and l (list (reduce (lambda (_ x) x) (cons nil l)))))
 
   ;; test
   (mapcar
@@ -279,7 +276,7 @@ Use ~pack~ defined in P09
   (defun encode (l)
     (unless (null l)
       (mapcar (lambda (sl)
-                  (list (length sl) (car sl)))
+                (list (length sl) (car sl)))
               (pack l))))
 
   ;; test
@@ -304,13 +301,13 @@ Use ~encode~ defined in [[*P10 (⋆) Run-length encoding of a list.][P10]].
 #+begin_src lisp
   (defun encode-modified (l)
     (mapcar (lambda (pair)
-                (if (= 1 (car pair)) (cadr pair) pair))
+              (if (= 1 (car pair)) (cadr pair) pair))
             (encode l)))
 
   ;; test
   (list
-     (encode-modified nil)
-     (encode-modified '(a a a a b c c a a d e e e e)))
+   (encode-modified nil)
+   (encode-modified '(a a a a b c c a a d e e e e)))
 #+end_src
 
 #+RESULTS:
@@ -637,7 +634,8 @@ Example:
 
 Hint: Combine the solutions of problems P22 and P23.
 
-:SOLUTION: following the hint, use ~range~ from [[*P22 (⋆) Create a list containing all integers within a given range.][P22]] and ~rnd-select~ from [[*P23 (⋆⋆) Extract a given number of randomly selected elements from a list.][P23]].
+:SOLUTION:
+Following the hint, use ~range~ from [[*P22 (⋆) Create a list containing all integers within a given range.][P22]] and ~rnd-select~ from [[*P23 (⋆⋆) Extract a given number of randomly selected elements from a list.][P23]].
 #+begin_src lisp
   (defun lotto-select (n m)
     (rnd-select (range 1 m) n))
@@ -1003,6 +1001,12 @@ We use a loop for divisor detection.
 #+RESULTS:
 - (NIL (2) (2 2) (3 3 5 7) (2 2 79) (317))
 
+When we write recursive functions, we often meet such cases like the problem above, the public interface of a function usually have less arguments than the actual recursive function, because states in arguments are not initialized yet. For such cases we have these solutions:
+
+- Store recursion states in a list structure, extract information from it before each recursive step. This is suitable for simple data structures that needs in-place updates, e. g. stack, tree, graph, matrix. For such cases we usually needs to extract information from the structure in a traverse in each recursive step. If the extractor is short, consider ~&aux~ specifier.
+- Write an auxiliary function with more or less arguments for recursion, so the public interface function only needs to do parameter initialization for the auxiliary function. This is a natural way to modulize your program. I have applied this solution for most problems, because most problems don't require a lot of functions to solve, ~-aux~ functions are clear here. However, if the auxiliary function needs to modify a local context, consider define it with ~labels~ to capture local lexical bindings. If the entry function's parameter list is a subset of auxiliary function's parameter list, consider combining them into one with ~&optional~ specifier.
+- Assume the parameters are encapsuled in a class as private data, the public interface function is a subclass, which initializes states in its constructor. For those problems that needs cooperation of a set of functions (e. g. parser, games), each may access part of the private data. Since there is no absolute boundary between code and data in CommonLisp, this way is usually easier and more extensible for larger code.
+
 :END:
 ** P36 (⋆⋆) Determine the prime factors of a given positive integer (2).
 Construct a list containing the prime factors and their multiplicity.
@@ -1106,7 +1110,7 @@ Or, use ~loop collect~ for an iterative-style program:
 #+RESULTS:
 - (5 7 11 13 17 19 23 29)
 
-There is a more efficient algorithm, during each cycle we tested each number with ~is-prime~, and we know that actually we only need to test primes. So, if we firstly find out all primes between ~2~ and ~(isqrt N)~, we can eliminate a lot of tests. Then recursion can be done on ~(isqrt N)~. The complexity of this recursive algorithm is O(N log log N), which is better than original simple algorithm of O(N log N)
+There could be a more efficient algorithm. In previous algorithm, during each cycle we tested each number with ~is-prime~, and we know that actually we only need to test primes. So, if we firstly find out all primes between ~2~ and ~(isqrt N)~, and then only use primes for test, we can eliminate a lot of tests. Then recursion can be done on ~(isqrt N)~. This algorithm is a sieve algorithm, sometimes referred as Euler sieve.
 
 #+begin_src lisp
   (defun search-prime-2-aux (n)
@@ -1142,6 +1146,8 @@ There is a more efficient algorithm, during each cycle we tested each number wit
 
 #+RESULTS:
 - T
+
+The time complexity of ~search-prime-1~ is O(N √N), while the time complexity of ~search-prime-2~ is O(N log log N), because for each number, we only test it with primes below it, and never prove a prime twice.
 
 :END:
 ** P40 (⋆⋆) Goldbach's conjecture.
@@ -4227,7 +4233,7 @@ Around 1994, a certain kind of puzzles was very popular in England. The "Sunday 
 The puzzle goes like this: Essentially, each row and column of a rectangular bitmap is annotated with the respective lengths of its distinct strings of occupied cells. The person who solves the puzzle must complete the bitmap given only these lengths.
 
 #+begin_src ascii
-          Problem statement:          :SOLUTION:
+          Problem statement:          Solution:
 
           |_|_|_|_|_|_|_|_| 3         |_|X|X|X|_|_|_|_| 3
           |_|_|_|_|_|_|_|_| 2 1       |X|X|_|X|_|_|_|_| 2 1
