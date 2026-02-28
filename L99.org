@@ -196,6 +196,31 @@ Hint: Use the predefined functions list and append.
 
 :SOLUTION:
 This is a very common operation in list manipulation, but no built-in for it.
+
+One common pitfall of using ~append~ for concatenation is that, it doesn't copy the last item. In Common Lisp we can use function ~concatenate~ to avoid this pitfall, besides, ~concatenate~ is a generic function which can also work on strings, vectors, etc. However, this function is 4 characters longer than ~append~, and needs one more parameter, so we may want something like ~(append a b nil)~ to get a concatenated list of both ~a~ and ~b~ 's copies, but this could be easily forgotten and messed up.
+
+In this problem, we use ~cdr~ for recursion, so the last item in recursion is always ~nil~. This avoids repeated copy in right-recursive list construction. That is ~append~ designed for: it is not designed for linear copy, but lfold. To be simple, the last argument of ~append~ is either ~nil~ or a right-recursive item that is a safe copy.
+
+Assume the input is always a list.
+
+#+begin_src lisp
+  (defun my-flatten (l)
+    (when l
+      (let ((x (car l))
+            (r (my-flatten (cdr l))))
+        (if (atom x)
+            (cons x r)
+          (append (my-flatten x) r)))))
+
+  ;; test
+  (my-flatten '(a (b (c d) e)))
+#+end_src
+
+#+RESULTS:
+- (A B C D E)
+
+This problem may also be solved with ~mapcan~. Although ~mapcan~ use ~nconc~ for concatenating elements, we can use ~list~ for constructing new lists. So each conscell is exactly copied once on atom-level. Actually ~nconc~ is mostly safe, as long as you are sure that all its arguments are totally constructed lists if you don't want to leave side effects.
+
 #+begin_src lisp
   (defun my-flatten (l)
     (mapcan (lambda (a)
@@ -414,20 +439,44 @@ Example:
 
 :SOLUTION:
 Here I use built-in function ~nthcdr~ plus another function ~concar~.
-- ~concar~ takes all elements before ~n~.
-- ~nthcdr~ takes all elements after ~n~.
-
-Note that ~nthcdr~ is not destructive, it returns a copy, just like ~concar~.
+- ~concar~ takes all elements before ~n~, it constructs a new list.
+- ~nthcdr~ takes all elements after ~n~ by taking ~cdr~ for ~n~ times.
 
 #+begin_src lisp
   (defun concar (n l)
     (unless (or (<= n 0) (null l))
       (cons (car l) (concar (1- n) (cdr l)))))
 
+  ;; `nthcdr' can also be easily implemented
+  (defun my-nthcdr (n l)
+    (if (or (<= n 0) (null l))
+        l
+        (my-nthcdr (1- n) (cdr l))))
+
   (defun drop (l n)
     (unless (null l)
       (append (concar (1- n) l)
               (drop (nthcdr n l) n))))
+
+  ;; test
+  (drop '(a b c d e f g h i k) 3)
+#+end_src
+
+#+RESULTS:
+- (A B D E G H K)
+
+It is a little bit wasting to use two separate functions, because both of the call ~cdr~ for ~n~ times.
+To integrate them into a one-pass function, we may maintain a counter for recording our state.
+#+begin_src lisp
+  (defun drop-aux (l n i)
+    (unless (null l)
+      (let ((r (drop-aux (cdr l) n (1+ i))))
+        (if (zerop (mod i n))
+            r
+            (cons (car l) r)))))
+
+  (defun drop (l n)
+    (drop-aux l n 1))
 
   ;; test
   (drop '(a b c d e f g h i k) 3)
@@ -445,15 +494,26 @@ Example:
 ((A B C) (D E F G H I K))
 
 :SOLUTION:
-Here we reuse ~concar~ defined in [[*P16 (⋆⋆) Drop every N'th element from a list.][P16]] and show that ~nthcdr~ can be easily implemented with the same manner.
+Here we reuse ~concar~ defined in [[*P16 (⋆⋆) Drop every N'th element from a list.][P16]]
 #+begin_src lisp
-  (defun my-nthcdr (n l)
-    (if (or (<= n 0) (null l))
-        l
-        (my-nthcdr (1- n) (cdr l))))
+  (defun split (l n)
+    (list (concar n l) (nthcdr n l)))
+
+  ;; test
+  (split '(a b c d e f g h i k) 3)
+#+end_src
+
+If we want a one-pass function:
+
+#+begin_src lisp
+  (defun split-aux (l r n i)
+    (if (and r (<= i n))
+        (split-aux (append l (list (car r)))
+                   (cdr r) n (1+ i))
+        (list l r)))
 
   (defun split (l n)
-    (list (concar n l) (my-nthcdr n l)))
+    (split-aux nil l n 1))
 
   ;; test
   (split '(a b c d e f g h i k) 3)
@@ -525,6 +585,7 @@ Following hint.
 #+RESULTS:
 - ((D E F G H A B C) (A B C D E F G H) (G H A B C D E F))
 
+Note that if we use the first ~split~ implement with ~concar~ and ~nthcar~ here, that ~append~ won't create overhead.
 :END:
 ** P20 (⋆) Remove the K'th element from a list.
 Example:
@@ -534,12 +595,16 @@ Example:
 :SOLUTION:
 In Common Lisp, there is a built-in function ~remove~ .
 
-Here using ~concar~ defined in [[*P16 (⋆⋆) Drop every N'th element from a list.][P16]].
 #+begin_src lisp
+  (defun remove-at-aux (l k i)
+    (when l
+      (let ((r (remove-at-aux (cdr l) k (1+ i))))
+        (if (= k i)
+            r
+            (cons (car l) r)))))
+
   (defun remove-at (l k)
-    (if (and (> k 0) (<= k (length l)))
-        (append (concar (1- k) l) (nthcdr k l))
-        l))
+    (remove-at-aux l k 1))
 
   ;; test
   (remove-at '(a b c d) 2)
@@ -556,15 +621,20 @@ Example:
 
 :SOLUTION:
 Amazing that there is no built-in function named ~insert~ .
-Here using ~concar~ defined in [[*P16 (⋆⋆) Drop every N'th element from a list.][P16]].
+
+This function returns a copy with element inserted.
 #+begin_src lisp
   (defun insert-at (item l pos)
-    (append (concar (1- pos) l)
-            (list item)
-            (nthcdr (1- pos) l)))
+    (if l
+        (if (<= pos 1)
+            (cons item (append l nil))
+            (cons (car l) (insert-at item (cdr l) (1- pos))))
+        (list item)))
 
   ;; test
   (list
+   (insert-at 'alfa '() 0)
+   (insert-at 'alfa '(a b c d) 0)
    (insert-at 'alfa '(a b c d) 1)
    (insert-at 'alfa '(a b c d) 2)
    (insert-at 'alfa '(a b c d) 5)
@@ -572,7 +642,7 @@ Here using ~concar~ defined in [[*P16 (⋆⋆) Drop every N'th element from a li
 #+end_src
 
 #+RESULTS:
-- ((ALFA A B C D) (A ALFA B C D) (A B C D ALFA))
+- ((ALFA) (ALFA A B C D) (ALFA A B C D) (A ALFA B C D) (A B C D ALFA))
 
 :END:
 ** P22 (⋆) Create a list containing all integers within a given range.
@@ -808,11 +878,10 @@ Here we use ~values~ and ~multiple-value-bind~ to return and receive multiple va
           (f-list '()))
       (mapc (lambda (item)
               (if (funcall pred item)
-                  (push item t-list)
-                  (push item f-list)))
+                  (setf t-list (append t-list (list item)))
+                  (setf f-list (append f-list (list item)))))
             l)
-      (values (nreverse t-list)
-              (nreverse f-list))))
+      (values t-list f-list)))
 
   ;; using quicksort
   (defun qsort (l pred &aux (pivot (car l)) (r (cdr l)))
@@ -843,18 +912,18 @@ b) use a slighty modified version of function ~pack~ defined in P09.
         (let ((res (pack-modified xs)))
           (if (= (length x) (length (car xs))) ; pack by length
               (cons (cons x (car res)) (cdr res))
-              (cons (list x) (pack xs)))
+              (cons (list x) (pack-modified xs)))
           )))
 
   (defun lfsort (l)
-    (apply #'append (lsort (pack-modified (lsort l)))))
+    (mapcan #'identity (lsort (pack-modified (lsort l)))))
 
   ;; test
   (lfsort '((a b c) (d e) (f g h) (d e) (i j k l) (m n) (o)))
 #+end_src
 
 #+RESULTS:
-- ((O) (I J K L) (F G H) (A B C) (M N) (D E) (D E))
+- ((O) (I J K L) (A B C) (F G H) (D E) (D E) (M N))
 
 :END:
 * Arithmetic
@@ -1433,7 +1502,7 @@ If your Lisp implementation don't have hashtable, you can use an associative lis
                 (if (= 1 n)
                     (list (list 0) (list 1))
                     (let ((suffix (gray-cached (1- n) cache)))
-                      (append ;; don't use nconc to avoid destroy cache
+                      (nconc
                        (mapcar (lambda (s) (cons 0 s)) suffix)
                        (mapcar (lambda (s) (cons 1 s)) (reverse suffix)))))))))
 
@@ -1448,6 +1517,7 @@ If your Lisp implementation don't have hashtable, you can use an associative lis
 #+RESULTS:
 - T
 
+If you want it to be faster, consider recurse on 2's powers rather than ~(1- n)~.
 :END:
 ** P50 (⋆⋆⋆) Huffman code.
 First of all, consult a good book on discrete mathematics or algorithms for a detailed description of Huffman codes!
@@ -1724,7 +1794,7 @@ Note that depth(T) = max(depth(left), depth(right)), and according to definition
       (t
        (let ((s1 (hbal-tree (- n 1)))
              (s2 (hbal-tree (- n 2))))
-         (append
+         (nconc
           ;; depth(s1) - depth(s2) = 0
           (mapcan
            (lambda (left)
@@ -1844,8 +1914,8 @@ Use ~nor~ defined in [[*P46 (⋆⋆) Truth tables for logical expressions.][P46]
     (cond
       ((null root) nil)
       ((nor (cadr root) (caddr root)) (list root))
-      (t (append (leaves (cadr root))
-                 (leaves (caddr root))))))
+      (t (nconc (leaves (cadr root))
+                (leaves (caddr root))))))
 
   ;; test
   (leaves '(A (B (C NIL NIL) NIL) (D (E NIL NIL) (F NIL NIL))))
@@ -1867,7 +1937,7 @@ Use ~nor~ defined in [[*P46 (⋆⋆) Truth tables for logical expressions.][P46]
     (cond
       ((null root) nil)
       ((nor (cadr root) (caddr root)) nil)
-      (t (append
+      (t (nconc
           (list root)
           (internals (cadr root))
           (internals (caddr root))))))
@@ -1895,7 +1965,7 @@ Using atlevel it is easy to construct a function levelorder which creates the le
       ((null root) nil)
       ((= n level) (list root))
       ((< n level)
-       (append
+       (nconc
         (atlevel-aux (cadr root) level (1+ n))
         (atlevel-aux (caddr root) level (1+ n))))))
 
@@ -2571,8 +2641,8 @@ Define the syntax of the string and write a function (tree string) to construct 
   (defun tree-encode (tree)
     (if (listp tree)
         (cons (car tree)
-              (append (mapcan (lambda (x) (tree-encode x)) (cdr tree))
-                      (list '^)))
+              (nconc (mapcan (lambda (x) (tree-encode x)) (cdr tree))
+                     (list '^)))
         (list tree '^)))
 
   (tree-encode '(a (f g) c (b d e)))
@@ -3988,8 +4058,8 @@ This program can compute ~K(3,6)~ instantly, however, ~K(3,8)~ will take a few m
                 (k-regular-graphs-aux
                  (cdr vs)
                  (list (car g)
-                       (append (mapcar (lambda (v2) (list v1 v2)) vk)
-                               (cadr g)))
+                       (nconc (mapcar (lambda (v2) (list v1 v2)) vk)
+                              (cadr g)))
                  k))
               (combination
                (- k (length avs))
