@@ -145,6 +145,15 @@ In Common Lisp, there is a built-in function ~length~.
 #+RESULTS:
 - 3
 
+Note that, although this function is very simple, it is not tail-recursive, the accumulation must be done after ~my-length~ returns 0 in recursion. Maybe a smarter compiler can translate it into iteration form, if it can identify that ~1+~ is a monotonic, pure, endomorphism. But this is beyond simple TCO (tail call optimization). If you don't want to add extra type declarations, you may prefer write it with ~reduce~.
+
+#+begin_src lisp
+  (defun my-length (l)
+    (reduce (lambda (acc _) (1+ acc)) l :initial-value 0))
+#+end_src
+
+There are many similar cases in solutions for following problems, I just add a note here once.
+
 :END:
 ** P05 (⋆) Reverse a list.
 
