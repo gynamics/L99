@@ -1680,6 +1680,8 @@ In Common Lisp, ~floor~ and ~ceil~ can also be used for integer division.
 - (X (X NIL NIL) (X NIL (X NIL NIL)))
 - (X (X NIL (X NIL NIL)) (X NIL NIL))
 
+P. S. Note that CBAL tree is not a complete tree. A completed tree is a tree filled level by level, from top to bottom, from left to right. The number of CBAL trees with given number of nodes satisfy ~a(2n) = 2*a(n) * a(n-1), a(2n+1) = a(n)*a(n)~. See [[https://oeis.org/A110316]] for more information.
+
 :END:
 ** P56 (⋆⋆) Symmetric binary trees
 Let us call a binary tree symmetric if you can draw a vertical line through the root node and then the right subtree is the mirror image of the left subtree. Write a function symmetric to check whether a given binary tree is symmetric. We are only interested in the structure, not in the contents of the nodes.
@@ -1778,6 +1780,22 @@ How many such trees are there with 57 nodes? Investigate about how many solution
 #+RESULTS:
 - (X (X (X NIL NIL) NIL) (X NIL (X NIL NIL)))
 - (X (X NIL (X NIL NIL)) (X (X NIL NIL) NIL))
+
+Note that a symmetric binary tree must have odd number nodes, so there is no solution for even numbers.
+
+#+begin_src lisp
+  (defun sym-cbal-trees-count (n)
+    (length
+     (mapcan (lambda (tree) (when (symmetric tree) (list tree)))
+             (cbal-tree n))))
+
+  (sym-cbal-trees-count 57)
+#+end_src
+
+ #+RESULTS:
+- 256
+
+Note that, suppose the number of symmetric cbal trees with n nodes is s(n), the number of cbal trees with n nodes is a(n), note that, ~s(2*n+1) = a(n)~.
 
 :END:
 ** P59 (⋆⋆) Construct height-balanced binary trees
